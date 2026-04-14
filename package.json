@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "node prisma/seed.js",
     "db:studio": "prisma studio",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "dev:web": "cd web && npm run dev"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
