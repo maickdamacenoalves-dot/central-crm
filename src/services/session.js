@@ -80,6 +80,7 @@ export async function saveMessage({
   body,
   externalId,
   agentId = null,
+  senderType = "CUSTOMER",
   mediaUrl,
   mediaType,
   mimeType,
@@ -92,6 +93,7 @@ export async function saveMessage({
       body,
       externalId,
       agentId,
+      senderType,
       mediaAttachments: mediaUrl
         ? {
             create: {
