@@ -1,0 +1,229 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  AGENT
+}
+
+enum ConversationStatus {
+  BOT
+  WAITING_QUEUE
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageChannel {
+  WHATSAPP
+  INTERNAL_NOTE
+}
+
+enum MediaType {
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  STICKER
+}
+
+// ── Organization ─────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  document  String?  @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stores Store[]
+
+  @@map("organizations")
+}
+
+// ── Store (Loja) ─────────────────────────────────────
+
+model Store {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  name           String
+  phone          String?
+  address        String?
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  agents       Agent[]
+  contacts     Contact[]    @relation("AssignedStore")
+
+  @@map("stores")
+}
+
+// ── Agent (Atendente / Usuário do painel) ────────────
+
+model Agent {
+  id             String   @id @default(uuid())
+  storeId        String   @map("store_id")
+  name           String
+  email          String   @unique
+  passwordHash   String   @map("password_hash")
+  role           Role     @default(AGENT)
+  isActive       Boolean  @default(true) @map("is_active")
+  lastLoginAt    DateTime? @map("last_login_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  store          Store          @relation(fields: [storeId], references: [id])
+  contacts       Contact[]      @relation("AssignedAgent")
+  conversations  Conversation[]
+  messages       Message[]
+  auditLogs      AuditLog[]
+
+  @@map("agents")
+}
+
+// ── Contact (Cliente WhatsApp) ───────────────────────
+
+model Contact {
+  id              String   @id @default(uuid())
+  phone           String   @unique
+  name            String?
+  profilePicUrl   String?  @map("profile_pic_url")
+  assignedStoreId String?  @map("assigned_store_id")
+  assignedAgentId String?  @map("assigned_agent_id")
+  isCarteirizado  Boolean  @default(false) @map("is_carteirizado")
+  metadata        Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  assignedStore  Store?         @relation("AssignedStore", fields: [assignedStoreId], references: [id])
+  assignedAgent  Agent?         @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  conversations  Conversation[]
+  aiContexts     AiContext[]
+
+  @@map("contacts")
+}
+
+// ── Conversation ─────────────────────────────────────
+
+model Conversation {
+  id          String             @id @default(uuid())
+  contactId   String             @map("contact_id")
+  agentId     String?            @map("agent_id")
+  status      ConversationStatus @default(BOT)
+  subject     String?
+  startedAt   DateTime           @default(now()) @map("started_at")
+  closedAt    DateTime?          @map("closed_at")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  contact  Contact   @relation(fields: [contactId], references: [id])
+  agent    Agent?    @relation(fields: [agentId], references: [id])
+  messages Message[]
+
+  @@index([contactId, status])
+  @@map("conversations")
+}
+
+// ── Message ──────────────────────────────────────────
+
+model Message {
+  id               String           @id @default(uuid())
+  conversationId   String           @map("conversation_id")
+  agentId          String?          @map("agent_id")
+  direction        MessageDirection
+  channel          MessageChannel   @default(WHATSAPP)
+  body             String?
+  externalId       String?          @unique @map("external_id")
+  timestamp        DateTime         @default(now())
+  createdAt        DateTime         @default(now()) @map("created_at")
+
+  conversation     Conversation      @relation(fields: [conversationId], references: [id])
+  agent            Agent?            @relation(fields: [agentId], references: [id])
+  mediaAttachments MediaAttachment[]
+
+  @@index([conversationId, timestamp])
+  @@map("messages")
+}
+
+// ── MediaAttachment ──────────────────────────────────
+
+model MediaAttachment {
+  id        String    @id @default(uuid())
+  messageId String    @map("message_id")
+  type      MediaType
+  url       String
+  mimeType  String?   @map("mime_type")
+  fileName  String?   @map("file_name")
+  fileSize  Int?      @map("file_size")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  message Message @relation(fields: [messageId], references: [id])
+
+  @@map("media_attachments")
+}
+
+// ── AiContext ────────────────────────────────────────
+
+model AiContext {
+  id        String   @id @default(uuid())
+  contactId String   @map("contact_id")
+  summary   String?
+  topics    Json?
+  sentiment String?
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  contact Contact @relation(fields: [contactId], references: [id])
+
+  @@map("ai_contexts")
+}
+
+// ── AuditLog ─────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  agentId   String?  @map("agent_id")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  details   Json?
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  agent Agent? @relation(fields: [agentId], references: [id])
+
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
+// ── Backup ───────────────────────────────────────────
+
+model Backup {
+  id         String   @id @default(uuid())
+  fileName   String   @map("file_name")
+  fileSize   BigInt?  @map("file_size")
+  type       String   @default("full")
+  status     String   @default("pending")
+  startedAt  DateTime @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("backups")
+}

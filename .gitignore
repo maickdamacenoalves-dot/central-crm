@@ -1,0 +1,33 @@
+node_modules/
+dist/
+.env
+*.log
+*.pid
+*.seed
+*.tgz
+
+# Prisma
+prisma/migrations/**/migration_lock.toml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker volumes
+pgdata/
+redisdata/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Build
+build/
+tmp/

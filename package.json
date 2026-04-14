@@ -1,0 +1,40 @@
+{
+  "name": "central-crm",
+  "version": "1.0.0",
+  "description": "CRM Conversacional - Grupo Central de Tintas",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "node prisma/seed.js",
+    "db:studio": "prisma studio",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/helmet": "^12.0.0",
+    "@fastify/jwt": "^9.0.0",
+    "@fastify/rate-limit": "^10.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "@prisma/client": "^6.2.0",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.30.0",
+    "ioredis": "^5.4.0",
+    "otpauth": "^9.3.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^13.0.0",
+    "zod": "^3.24.0",
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.2.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
