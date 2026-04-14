@@ -6,7 +6,47 @@ import { sendStoreButtons, handleStoreSelection } from "../../services/store-sel
 import { dispatchToAgent } from "../../services/dispatcher.js";
 import { sendText } from "../../services/zapi.js";
 import { saveMessage } from "../../services/session.js";
+import { processMediaPipeline } from "../../services/media.js";
+import { prisma } from "../../config/database.js";
 import { logger } from "../../utils/logger.js";
+
+// Socket.IO pode não estar disponível (worker separado)
+let emitNewMessage;
+try {
+  const socketModule = await import("../../config/socket.js");
+  emitNewMessage = socketModule.emitNewMessage;
+} catch {
+  emitNewMessage = () => {};
+}
+
+/**
+ * Processa mídia recebida: download, salva no disco, atualiza MediaAttachment.
+ */
+async function processIncomingMedia(message, normalized) {
+  if (!normalized.hasMedia || !normalized.mediaUrl) return;
+
+  try {
+    const result = await processMediaPipeline({
+      mediaUrl: normalized.mediaUrl,
+      mimeType: normalized.mimeType,
+      fileName: normalized.fileName,
+      mediaType: normalized.mediaType,
+    });
+
+    if (result && message.mediaAttachments?.length > 0) {
+      await prisma.mediaAttachment.update({
+        where: { id: message.mediaAttachments[0].id },
+        data: {
+          url: result.localUrl,
+          fileName: result.fileName,
+          fileSize: result.fileSize,
+        },
+      });
+    }
+  } catch (err) {
+    logger.warn({ err, messageId: message.id }, "Media processing failed — continuing");
+  }
+}
 
 /**
  * Processa rota BOT: chama a IA e, se necessário, aciona store-selector.
@@ -49,12 +89,10 @@ async function handleStoreSelect({ contact, conversation, normalized }) {
   });
 
   if (!selection) {
-    // Botão inválido — reenvia seleção
     await sendStoreButtons({ contact, conversation });
     return { action: "retry_store_select" };
   }
 
-  // Despacha para atendente da loja selecionada
   const dispatch = await dispatchToAgent({
     contact: selection.contact,
     conversation,
@@ -65,19 +103,22 @@ async function handleStoreSelect({ contact, conversation, normalized }) {
 }
 
 /**
- * Processa rota AGENT: por enquanto só loga (painel vem na fase 3).
+ * Processa rota AGENT: notifica via Socket.IO (painel fase 3).
  */
-async function handleAgentRoute({ contact, conversation, normalized }) {
+async function handleAgentRoute({ contact, conversation, message, normalized }) {
   logger.info(
     {
       phone: contact.phone,
       agentId: contact.assignedAgentId || conversation.agentId,
       conversationId: conversation.id,
     },
-    "Message routed to AGENT — awaiting panel (fase 3)"
+    "Message routed to AGENT"
   );
 
-  return { action: "agent_pending" };
+  // Notifica atendente via Socket.IO em tempo real
+  emitNewMessage({ conversation, message, contact });
+
+  return { action: "agent_notified" };
 }
 
 const worker = new Worker(
@@ -100,6 +141,9 @@ const worker = new Worker(
         "Message routed"
       );
 
+      // Processa mídia em paralelo (não bloqueia o fluxo principal)
+      processIncomingMedia(result.message, result.normalized).catch(() => {});
+
       // Executa handler com base na rota
       let handlerResult;
 
@@ -118,6 +162,7 @@ const worker = new Worker(
 
         case "QUEUE":
           logger.info({ phone, conversationId: result.conversation.id }, "Message in QUEUE — waiting for agent");
+          emitNewMessage({ conversation: result.conversation, message: result.message, contact: result.contact });
           handlerResult = { action: "queued" };
           break;
 
