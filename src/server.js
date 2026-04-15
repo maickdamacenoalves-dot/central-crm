@@ -23,8 +23,15 @@ import { lgpdRoutes } from "./routes/api/lgpd.js";
 const app = Fastify({ logger: loggerConfig });
 
 // ── Plugins ──────────────────────────────────────────
+const allowedOrigins = [
+  "https://crm.centraldetintas.com",
+  ...(env.NODE_ENV !== "production"
+    ? ["http://localhost:3000", "http://localhost:3001"]
+    : []),
+];
+
 await app.register(cors, {
-  origin: true,
+  origin: allowedOrigins,
   credentials: true,
 });
 

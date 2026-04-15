@@ -60,10 +60,15 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=https://crm.centraldetintas.com
+        - NEXT_PUBLIC_SOCKET_URL=https://crm.centraldetintas.com
     container_name: crm-web-prod
     restart: always
     environment:
       - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=https://crm.centraldetintas.com
+      - NEXT_PUBLIC_SOCKET_URL=https://crm.centraldetintas.com
     depends_on:
       - api
     networks:
@@ -96,7 +101,9 @@ services:
       - certbot-etc:/etc/letsencrypt
       - certbot-var:/var/lib/letsencrypt
       - certbot-www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do sleep 12h & wait $${!}; certbot renew --webroot -w /var/www/certbot; done'"
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'"
+    # Para emitir o certificado pela primeira vez, execute:
+    # docker compose -f docker-compose.prod.yml run --rm certbot certonly --webroot -w /var/www/certbot -d crm.centraldetintas.com --email admin@centraldetintas.com --agree-tos --no-eff-email
 
 volumes:
   pgdata:

@@ -42,6 +42,9 @@ const envSchema = z.object({
 
   // ClamAV
   CLAMAV_ENABLED: z.string().default("false"),
+
+  // Public URL
+  API_URL: z.string().default("http://localhost:3000"),
 });
 
 function loadEnv() {
