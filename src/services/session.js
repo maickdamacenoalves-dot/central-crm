@@ -1,9 +1,48 @@
 import { prisma } from "../config/database.js";
 import { redis } from "../config/redis.js";
 import { logger } from "../utils/logger.js";
+import { encrypt, decrypt } from "../utils/crypto.js";
 
 const CONTACT_CACHE_TTL = 3600; // 1 hora
 const CONVERSATION_CACHE_TTL = 1800; // 30 min
+
+// ── Helpers de criptografia ─────────────────────────
+
+function encryptField(value) {
+  if (!value) return value;
+  try {
+    return encrypt(value);
+  } catch (err) {
+    logger.error({ err }, "Encryption failed, storing plaintext");
+    return value;
+  }
+}
+
+function decryptField(value) {
+  if (!value) return value;
+  try {
+    return decrypt(value);
+  } catch {
+    // Valor pode ser plaintext (migração gradual)
+    return value;
+  }
+}
+
+function decryptMessage(message) {
+  if (!message) return message;
+  return {
+    ...message,
+    body: decryptField(message.body),
+  };
+}
+
+function decryptContact(contact) {
+  if (!contact) return contact;
+  return {
+    ...contact,
+    document: decryptField(contact.document),
+  };
+}
 
 // ── Contact ──────────────────────────────────────────
 
@@ -86,11 +125,14 @@ export async function saveMessage({
   mimeType,
   fileName,
 }) {
+  // Encrypt message body before saving
+  const encryptedBody = encryptField(body);
+
   const message = await prisma.message.create({
     data: {
       conversationId,
       direction,
-      body,
+      body: encryptedBody,
       externalId,
       agentId,
       senderType,
@@ -108,5 +150,28 @@ export async function saveMessage({
     include: { mediaAttachments: true },
   });
 
-  return message;
+  // Return decrypted body for downstream consumers
+  return decryptMessage(message);
 }
+
+// ── Funções de leitura com descriptografia ───────────
+
+export async function getConversationMessages(conversationId) {
+  const messages = await prisma.message.findMany({
+    where: { conversationId },
+    include: { mediaAttachments: true },
+    orderBy: { timestamp: "asc" },
+  });
+
+  return messages.map(decryptMessage);
+}
+
+export async function getContactWithDecryption(contactId) {
+  const contact = await prisma.contact.findUnique({
+    where: { id: contactId },
+  });
+
+  return decryptContact(contact);
+}
+
+export { decryptMessage, decryptContact, decryptField, encryptField };

@@ -1,8 +1,18 @@
+import { z } from "zod";
 import { prisma } from "../../config/database.js";
 import { redis } from "../../config/redis.js";
 import { authenticate } from "../../middleware/auth.js";
 import { getIO } from "../../config/socket.js";
 import { logger } from "../../utils/logger.js";
+import { logAudit, getClientIp } from "../../services/audit.js";
+import { decryptMessage } from "../../services/session.js";
+
+const transferSchema = z.object({
+  targetAgentId: z.string().uuid().optional(),
+  targetStoreId: z.string().optional(),
+}).refine((d) => d.targetAgentId || d.targetStoreId, {
+  message: "targetAgentId or targetStoreId required",
+});
 
 export async function conversationRoutes(app) {
   app.addHook("onRequest", authenticate);
@@ -60,6 +70,9 @@ export async function conversationRoutes(app) {
 
     if (!conversation) return reply.code(404).send({ error: "Conversation not found" });
 
+    // Decrypt message bodies
+    conversation.messages = conversation.messages.map(decryptMessage);
+
     return conversation;
   });
 
@@ -80,6 +93,14 @@ export async function conversationRoutes(app) {
 
     await redis.del(`conv:active:${conversation.contactId}`);
 
+    await logAudit({
+      actorId: agentId,
+      action: "close_conversation",
+      resourceType: "conversation",
+      resourceId: updated.id,
+      ipAddress: getClientIp(request),
+    });
+
     try {
       const io = getIO();
       io.to(`store:${request.user.storeId}`).emit("conversation:closed", {
@@ -93,10 +114,12 @@ export async function conversationRoutes(app) {
 
   // PATCH /api/conversations/:id/transfer — transferir
   app.patch("/:id/transfer", async (request, reply) => {
-    const { targetAgentId, targetStoreId } = request.body || {};
-    if (!targetAgentId && !targetStoreId) {
-      return reply.code(400).send({ error: "targetAgentId or targetStoreId required" });
+    const parsed = transferSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0].message });
     }
+
+    const { targetAgentId, targetStoreId } = parsed.data;
 
     const conversation = await prisma.conversation.findUnique({
       where: { id: request.params.id },
@@ -135,6 +158,15 @@ export async function conversationRoutes(app) {
       where: { id: request.params.id },
       data: updateData,
       include: { contact: true, agent: true },
+    });
+
+    await logAudit({
+      actorId: request.user.id,
+      action: "transfer_conversation",
+      resourceType: "conversation",
+      resourceId: updated.id,
+      details: { targetAgentId, targetStoreId },
+      ipAddress: getClientIp(request),
     });
 
     try {

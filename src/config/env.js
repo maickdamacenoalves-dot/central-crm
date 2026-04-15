@@ -35,6 +35,13 @@ const envSchema = z.object({
   VHSYS_TOKEN: z.string(),
   VHSYS_SECRET: z.string(),
   VHSYS_BASE_URL: z.string().url(),
+
+  // Google Drive Backup
+  GOOGLE_SERVICE_ACCOUNT_KEY_FILE: z.string().default(""),
+  GOOGLE_DRIVE_FOLDER_ID: z.string().default(""),
+
+  // ClamAV
+  CLAMAV_ENABLED: z.string().default("false"),
 });
 
 function loadEnv() {

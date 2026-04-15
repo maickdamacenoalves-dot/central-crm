@@ -40,11 +40,11 @@ async function main() {
   }
 
   // ── Admin ──────────────────────────────────────────
-  const adminHash = await bcrypt.hash("Admin@2025!", 12);
+  const adminHash = await bcrypt.hash("admin123", 12);
 
   await prisma.agent.upsert({
     where: { email: "maick@centraldetintas.com" },
-    update: {},
+    update: { passwordHash: adminHash },
     create: {
       storeId: stores[0].id,
       name: "Maick Damaceno",

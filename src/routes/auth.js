@@ -4,6 +4,7 @@ import { prisma } from "../config/database.js";
 import { redis } from "../config/redis.js";
 import { env } from "../config/env.js";
 import { authenticate } from "../middleware/auth.js";
+import { logAudit, getClientIp } from "../services/audit.js";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -11,8 +12,19 @@ const loginSchema = z.object({
 });
 
 export async function authRoutes(app) {
+  // Rate limit específico para login: 5 tentativas por IP em 15 minutos
+  const loginRateLimit = {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: "15 minutes",
+        keyGenerator: (request) => getClientIp(request),
+      },
+    },
+  };
+
   // POST /auth/login
-  app.post("/login", async (request, reply) => {
+  app.post("/login", loginRateLimit, async (request, reply) => {
     const { email, password } = loginSchema.parse(request.body);
 
     const agent = await prisma.agent.findUnique({
@@ -53,6 +65,14 @@ export async function authRoutes(app) {
     await prisma.agent.update({
       where: { id: agent.id },
       data: { lastLoginAt: new Date() },
+    });
+
+    await logAudit({
+      actorId: agent.id,
+      action: "login",
+      resourceType: "agent",
+      resourceId: agent.id,
+      ipAddress: getClientIp(request),
     });
 
     return {
@@ -111,6 +131,15 @@ export async function authRoutes(app) {
   // POST /auth/logout
   app.post("/logout", { preHandler: [authenticate] }, async (request) => {
     await redis.del(`refresh:${request.user.id}`);
+
+    await logAudit({
+      actorId: request.user.id,
+      action: "logout",
+      resourceType: "agent",
+      resourceId: request.user.id,
+      ipAddress: getClientIp(request),
+    });
+
     return { message: "Logged out" };
   });
 

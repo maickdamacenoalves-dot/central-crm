@@ -24,3 +24,24 @@ export const mediaQueue = new Queue("media", {
     removeOnFail: { count: 2000 },
   },
 });
+
+export const backupQueue = new Queue("backups", {
+  connection: redisConnection,
+  defaultJobOptions: {
+    removeOnComplete: { count: 100 },
+    removeOnFail: { count: 100 },
+  },
+});
+
+// Schedule repeatable backup job: daily at 2 AM
+// Sundays = FULL, other days = INCREMENTAL
+backupQueue.add(
+  "scheduled-backup",
+  {},
+  {
+    repeat: { pattern: "0 2 * * *" },
+    jobId: "daily-backup",
+  }
+).catch(() => {
+  // Queue might not be ready yet on first import
+});

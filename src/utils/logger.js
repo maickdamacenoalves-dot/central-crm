@@ -2,7 +2,7 @@ import pino from "pino";
 
 const isDev = process.env.NODE_ENV !== "production";
 
-export const logger = pino({
+export const loggerConfig = {
   level: process.env.LOG_LEVEL || (isDev ? "debug" : "info"),
   ...(isDev && {
     transport: {
@@ -14,4 +14,6 @@ export const logger = pino({
       },
     },
   }),
-});
+};
+
+export const logger = pino(loggerConfig);

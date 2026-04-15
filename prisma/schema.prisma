@@ -34,6 +34,12 @@ enum MessageChannel {
   INTERNAL_NOTE
 }
 
+enum SenderType {
+  CUSTOMER
+  BOT
+  AGENT
+}
+
 enum MediaType {
   IMAGE
   AUDIO
@@ -85,6 +91,7 @@ model Agent {
   passwordHash   String   @map("password_hash")
   role           Role     @default(AGENT)
   isActive       Boolean  @default(true) @map("is_active")
+  isOnline       Boolean  @default(false) @map("is_online")
   lastLoginAt    DateTime? @map("last_login_at")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
@@ -104,6 +111,7 @@ model Contact {
   id              String   @id @default(uuid())
   phone           String   @unique
   name            String?
+  document        String?  // CPF/CNPJ — encrypted at rest
   profilePicUrl   String?  @map("profile_pic_url")
   assignedStoreId String?  @map("assigned_store_id")
   assignedAgentId String?  @map("assigned_agent_id")
@@ -149,6 +157,7 @@ model Message {
   agentId          String?          @map("agent_id")
   direction        MessageDirection
   channel          MessageChannel   @default(WHATSAPP)
+  senderType       SenderType       @default(CUSTOMER) @map("sender_type")
   body             String?
   externalId       String?          @unique @map("external_id")
   timestamp        DateTime         @default(now())
@@ -165,14 +174,16 @@ model Message {
 // ── MediaAttachment ──────────────────────────────────
 
 model MediaAttachment {
-  id        String    @id @default(uuid())
-  messageId String    @map("message_id")
-  type      MediaType
-  url       String
-  mimeType  String?   @map("mime_type")
-  fileName  String?   @map("file_name")
-  fileSize  Int?      @map("file_size")
-  createdAt DateTime  @default(now()) @map("created_at")
+  id              String    @id @default(uuid())
+  messageId       String    @map("message_id")
+  type            MediaType
+  url             String
+  mimeType        String?   @map("mime_type")
+  fileName        String?   @map("file_name")
+  fileSize        Int?      @map("file_size")
+  thumbnailUrl    String?   @map("thumbnail_url")
+  virusScanStatus String    @default("pending") @map("virus_scan_status") // pending, clean, infected, skipped
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   message Message @relation(fields: [messageId], references: [id])
 
@@ -182,48 +193,58 @@ model MediaAttachment {
 // ── AiContext ────────────────────────────────────────
 
 model AiContext {
-  id        String   @id @default(uuid())
-  contactId String   @map("contact_id")
-  summary   String?
-  topics    Json?
-  sentiment String?
-  updatedAt DateTime @updatedAt @map("updated_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid())
+  contactId      String   @map("contact_id")
+  conversationId String?  @map("conversation_id")
+  summary        String?
+  topics         Json?
+  sentiment      String?
+  messages       Json?    @default("[]")
+  intent         String?
+  transferCount  Int      @default(0) @map("transfer_count")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   contact Contact @relation(fields: [contactId], references: [id])
 
+  @@unique([contactId, conversationId])
   @@map("ai_contexts")
 }
 
 // ── AuditLog ─────────────────────────────────────────
 
 model AuditLog {
-  id        String   @id @default(uuid())
-  agentId   String?  @map("agent_id")
-  action    String
-  entity    String
-  entityId  String?  @map("entity_id")
-  details   Json?
-  ip        String?
-  createdAt DateTime @default(now()) @map("created_at")
+  id           String   @id @default(uuid())
+  organizationId String? @map("organization_id")
+  agentId      String?  @map("agent_id")
+  actorType    String   @default("agent") @map("actor_type") // agent, system, api
+  action       String
+  entity       String   // resourceType
+  entityId     String?  @map("entity_id")
+  details      Json?
+  ip           String?
+  createdAt    DateTime @default(now()) @map("created_at")
 
   agent Agent? @relation(fields: [agentId], references: [id])
 
   @@index([entity, entityId])
+  @@index([agentId, createdAt])
   @@map("audit_logs")
 }
 
 // ── Backup ───────────────────────────────────────────
 
 model Backup {
-  id         String   @id @default(uuid())
-  fileName   String   @map("file_name")
-  fileSize   BigInt?  @map("file_size")
-  type       String   @default("full")
-  status     String   @default("pending")
-  startedAt  DateTime @default(now()) @map("started_at")
-  finishedAt DateTime? @map("finished_at")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id            String    @id @default(uuid())
+  fileName      String    @map("file_name")
+  fileSize      BigInt?   @map("file_size")
+  type          String    @default("full")   // full, incremental
+  status        String    @default("pending") // pending, running, completed, failed
+  driveFileId   String?   @map("drive_file_id")
+  errorMessage  String?   @map("error_message")
+  startedAt     DateTime  @default(now()) @map("started_at")
+  finishedAt    DateTime? @map("finished_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
 
   @@map("backups")
 }

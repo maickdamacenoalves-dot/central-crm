@@ -13,7 +13,8 @@
     "db:seed": "node prisma/seed.js",
     "db:studio": "prisma studio",
     "lint": "eslint src/",
-    "dev:web": "cd web && npm run dev"
+    "dev:web": "cd web && npm run dev",
+    "build:web": "cd web && npm run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -26,7 +27,9 @@
     "@prisma/client": "^6.2.0",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.30.0",
+    "clamscan": "^2.4.0",
     "fastify": "^5.2.0",
+    "googleapis": "^144.0.0",
     "ioredis": "^5.4.0",
     "otpauth": "^9.3.0",
     "pino": "^9.5.0",

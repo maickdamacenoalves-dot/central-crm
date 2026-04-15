@@ -17,6 +17,8 @@ import { agentRoutes } from "./routes/api/agents.js";
 import { storeRoutes } from "./routes/api/stores.js";
 import { dashboardRoutes } from "./routes/api/dashboard.js";
 import { vhsysRoutes } from "./routes/api/vhsys.js";
+import { backupRoutes } from "./routes/api/backups.js";
+import { lgpdRoutes } from "./routes/api/lgpd.js";
 
 const app = Fastify({ logger: loggerConfig });
 
@@ -27,7 +29,25 @@ await app.register(cors, {
 });
 
 await app.register(helmet, {
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "wss:", "ws:"],
+      fontSrc: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  hsts: {
+    maxAge: 63072000,
+    includeSubDomains: true,
+    preload: true,
+  },
+  frameguard: { action: "deny" },
+  xContentTypeOptions: true,
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
 });
 
 await app.register(jwt, {
@@ -59,6 +79,8 @@ await app.register(agentRoutes, { prefix: "/api/agents" });
 await app.register(storeRoutes, { prefix: "/api/stores" });
 await app.register(dashboardRoutes, { prefix: "/api/dashboard" });
 await app.register(vhsysRoutes, { prefix: "/api/vhsys" });
+await app.register(backupRoutes, { prefix: "/api/backups" });
+await app.register(lgpdRoutes, { prefix: "/api/lgpd" });
 
 // ── Start ────────────────────────────────────────────
 try {

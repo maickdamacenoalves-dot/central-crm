@@ -22,7 +22,14 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Não tenta refresh em rotas de auth (login, refresh, etc.)
+    const isAuthRoute = originalRequest?.url?.startsWith('/auth/');
+
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !isAuthRoute
+    ) {
       originalRequest._retry = true;
 
       try {

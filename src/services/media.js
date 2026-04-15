@@ -1,8 +1,9 @@
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, unlink } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { logger } from "../utils/logger.js";
+import { prisma } from "../config/database.js";
 
 const UPLOADS_DIR = join(process.cwd(), "uploads");
 const THUMBS_DIR = join(UPLOADS_DIR, "thumbnails");
@@ -24,6 +25,60 @@ const MIME_TO_EXT = {
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
 };
+
+// ── ClamAV Scanner ──────────────────────────────────
+
+let clamScanner = null;
+let clamAvailable = false;
+
+async function initClamAV() {
+  try {
+    const NodeClam = (await import("clamscan")).default;
+    clamScanner = await new NodeClam().init({
+      removeInfected: false,
+      quarantineInfected: false,
+      debugMode: false,
+      clamdscan: {
+        socket: null,
+        host: "127.0.0.1",
+        port: 3310,
+        timeout: 30000,
+        active: true,
+      },
+      preference: "clamdscan",
+    });
+    clamAvailable = true;
+    logger.info("ClamAV scanner initialized");
+  } catch (err) {
+    logger.warn({ err: err.message }, "ClamAV not available — uploads will skip virus scanning");
+    clamAvailable = false;
+  }
+}
+
+// Initialize ClamAV (non-blocking)
+initClamAV();
+
+/**
+ * Escaneia um arquivo com ClamAV.
+ * @returns {"clean"|"infected"|"skipped"}
+ */
+async function scanFile(filePath) {
+  if (!clamAvailable || !clamScanner) {
+    return "skipped";
+  }
+
+  try {
+    const { isInfected, viruses } = await clamScanner.isInfected(filePath);
+    if (isInfected) {
+      logger.error({ filePath, viruses }, "INFECTED FILE DETECTED — deleting");
+      return "infected";
+    }
+    return "clean";
+  } catch (err) {
+    logger.warn({ err: err.message, filePath }, "ClamAV scan failed, skipping");
+    return "skipped";
+  }
+}
 
 /**
  * Baixa mídia de uma URL (Z-API).
@@ -54,13 +109,23 @@ export async function saveMedia(buffer, { mimeType, originalName }) {
 
   await writeFile(filePath, buffer);
 
-  logger.info({ fileName, size: buffer.length }, "Media saved to disk");
+  // Scan with ClamAV
+  const scanResult = await scanFile(filePath);
+
+  if (scanResult === "infected") {
+    await unlink(filePath);
+    logger.error({ fileName }, "Infected file deleted, aborting media save");
+    throw new Error("File is infected and has been deleted");
+  }
+
+  logger.info({ fileName, size: buffer.length, virusScan: scanResult }, "Media saved to disk");
 
   return {
     filePath,
     fileName,
     fileSize: buffer.length,
     localUrl: `/uploads/${fileName}`,
+    virusScanStatus: scanResult,
   };
 }
 
@@ -91,7 +156,7 @@ export async function generateThumbnail(filePath, fileName) {
 }
 
 /**
- * Pipeline completo: download → salva → thumbnail (se imagem).
+ * Pipeline completo: download → salva → scan → thumbnail (se imagem).
  */
 export async function processMediaPipeline({ mediaUrl, mimeType, fileName: originalName, mediaType }) {
   if (!mediaUrl) return null;
@@ -114,6 +179,7 @@ export async function processMediaPipeline({ mediaUrl, mimeType, fileName: origi
       fileName: saved.fileName,
       fileSize: saved.fileSize,
       thumbnailUrl: thumbnail?.thumbUrl || null,
+      virusScanStatus: saved.virusScanStatus,
     };
   } catch (err) {
     logger.error({ err, mediaUrl }, "Media pipeline failed");
